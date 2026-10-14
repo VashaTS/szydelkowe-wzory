@@ -1,0 +1,263 @@
+[
+ {
+  "id": "chain",
+  "name": "Łańcuszek",
+  "w": 60,
+  "h": 20,
+  "ax": 30,
+  "ay": 10,
+  "src": "CYC"
+ },
+ {
+  "id": "slip-stitch",
+  "name": "Oczko ścisłe zamykające (oczko zamykające)",
+  "w": 20,
+  "h": 20,
+  "ax": 10,
+  "ay": 10,
+  "src": "CYC"
+ },
+ {
+  "id": "sc-plus",
+  "name": "Oczko ścisłe (+)",
+  "w": 30,
+  "h": 30,
+  "ax": 15.0,
+  "ay": 28,
+  "src": "CYC"
+ },
+ {
+  "id": "sc-cross",
+  "name": "Oczko ścisłe (×)",
+  "w": 30,
+  "h": 30,
+  "ax": 15.0,
+  "ay": 28,
+  "src": "CYC"
+ },
+ {
+  "id": "hdc",
+  "name": "Półsłupek",
+  "w": 30,
+  "h": 50,
+  "ax": 15.0,
+  "ay": 48,
+  "src": "CYC"
+ },
+ {
+  "id": "dc",
+  "name": "Słupek",
+  "w": 30,
+  "h": 60,
+  "ax": 15.0,
+  "ay": 58,
+  "src": "CYC"
+ },
+ {
+  "id": "tr",
+  "name": "Słupek podwójny",
+  "w": 30,
+  "h": 80,
+  "ax": 15.0,
+  "ay": 78,
+  "src": "CYC"
+ },
+ {
+  "id": "dtr",
+  "name": "Słupek potrójny",
+  "w": 30,
+  "h": 100,
+  "ax": 15.0,
+  "ay": 98,
+  "src": "CYC"
+ },
+ {
+  "id": "sc2tog",
+  "name": "2 oczka ścisłe razem",
+  "w": 60,
+  "h": 50,
+  "ax": 30.0,
+  "ay": 48,
+  "src": "CYC"
+ },
+ {
+  "id": "sc3tog",
+  "name": "3 oczka ścisłe razem",
+  "w": 80,
+  "h": 50,
+  "ax": 40.0,
+  "ay": 48,
+  "src": "CYC"
+ },
+ {
+  "id": "dc2tog",
+  "name": "2 słupki razem",
+  "w": 60,
+  "h": 70,
+  "ax": 30.0,
+  "ay": 68,
+  "src": "CYC"
+ },
+ {
+  "id": "dc3tog",
+  "name": "3 słupki razem",
+  "w": 80,
+  "h": 70,
+  "ax": 40.0,
+  "ay": 68,
+  "src": "CYC"
+ },
+ {
+  "id": "3-dc-cluster",
+  "name": "Grupa 3 słupków",
+  "w": 46,
+  "h": 70,
+  "ax": 23.0,
+  "ay": 68,
+  "src": "CYC"
+ },
+ {
+  "id": "3-hdc-cluster",
+  "name": "Pufka (3 półsłupki)",
+  "w": 46,
+  "h": 70,
+  "ax": 23.0,
+  "ay": 68,
+  "src": "CYC"
+ },
+ {
+  "id": "5-dc-popcorn",
+  "name": "Popcorn (5 słupków)",
+  "w": 66,
+  "h": 70,
+  "ax": 33.0,
+  "ay": 68,
+  "src": "CYC"
+ },
+ {
+  "id": "5-dc-shell",
+  "name": "Muszelka (5 słupków)",
+  "w": 120,
+  "h": 70,
+  "ax": 60.0,
+  "ay": 68,
+  "src": "CYC"
+ },
+ {
+  "id": "ch-3-picot",
+  "name": "Pikotka (3 łańcuszki)",
+  "w": 26,
+  "h": 35,
+  "ax": 13.0,
+  "ay": 33,
+  "src": "CYC"
+ },
+ {
+  "id": "fpdc",
+  "name": "Słupek reliefowy z przodu",
+  "w": 30,
+  "h": 75,
+  "ax": 15.0,
+  "ay": 73,
+  "src": "CYC"
+ },
+ {
+  "id": "bpdc",
+  "name": "Słupek reliefowy z tyłu",
+  "w": 30,
+  "h": 75,
+  "ax": 15.0,
+  "ay": 73,
+  "src": "CYC"
+ },
+ {
+  "id": "worked-in-back-loop",
+  "name": "Za tylną nitkę",
+  "w": 30,
+  "h": 18,
+  "ax": 15.0,
+  "ay": 16,
+  "src": "CYC"
+ },
+ {
+  "id": "worked-in-front-loop",
+  "name": "Za przednią nitkę",
+  "w": 30,
+  "h": 18,
+  "ax": 15.0,
+  "ay": 16,
+  "src": "CYC"
+ },
+ {
+  "id": "spike-sc",
+  "name": "Oczko ścisłe wydłużone (spike)",
+  "w": 30,
+  "h": 70,
+  "ax": 15,
+  "ay": 68,
+  "src": "własny"
+ },
+ {
+  "id": "fphdc",
+  "name": "Półsłupek reliefowy z przodu",
+  "w": 30,
+  "h": 60,
+  "ax": 15,
+  "ay": 58,
+  "src": "własny"
+ },
+ {
+  "id": "fptr",
+  "name": "Słupek podwójny reliefowy z przodu",
+  "w": 30,
+  "h": 75,
+  "ax": 15,
+  "ay": 73,
+  "src": "własny"
+ },
+ {
+  "id": "bptr",
+  "name": "Słupek podwójny reliefowy z tyłu",
+  "w": 30,
+  "h": 75,
+  "ax": 15,
+  "ay": 73,
+  "src": "własny"
+ },
+ {
+  "id": "hdc2tog",
+  "name": "2 półsłupki razem",
+  "w": 60,
+  "h": 50,
+  "ax": 30,
+  "ay": 48,
+  "src": "własny"
+ },
+ {
+  "id": "magic-ring",
+  "name": "Magiczne kółko",
+  "w": 40,
+  "h": 40,
+  "ax": 20,
+  "ay": 20,
+  "src": "własny"
+ },
+ {
+  "id": "spike-dc",
+  "name": "Słupek wydłużony",
+  "w": 30,
+  "h": 80,
+  "ax": 15,
+  "ay": 78,
+  "src": "własny"
+ },
+ {
+  "id": "bphdc",
+  "name": "Półsłupek reliefowy z tyłu",
+  "w": 30,
+  "h": 60,
+  "ax": 15,
+  "ay": 58,
+  "src": "własny"
+ }
+]
