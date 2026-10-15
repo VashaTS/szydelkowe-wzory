@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 const double kCanvas = 1500;
+const fileChannel = MethodChannel('szydelko/files');
 const kColors = <int>[
   0xFF000000,
   0xFF616161,
@@ -132,16 +133,25 @@ class _EditorState extends State<Editor> {
   @override
   void initState() {
     super.initState();
-    loadStitches().then(
-      (l) => setState(() {
+    fileChannel.setMethodCallHandler((call) async {
+      if (call.method == 'fileOpened') await handleIncoming(call.arguments);
+    });
+    loadStitches().then((l) async {
+      if (!mounted) return;
+      setState(() {
         stitches = l;
         byId = {for (final s in l) s.id: s};
         selectedStitch = l.firstWhere(
           (s) => s.id == 'dc',
           orElse: () => l.first,
         );
-      }),
-    );
+      });
+      // file opened from WhatsApp / Files at app start
+      try {
+        final m = await fileChannel.invokeMethod('getInitialFile');
+        if (m != null) await handleIncoming(m);
+      } catch (_) {}
+    });
     tc.value = Matrix4.identity()
       ..translateByDouble(-kCanvas / 2 + 180, -kCanvas / 2 + 300, 0, 1);
   }
@@ -329,6 +339,159 @@ class _EditorState extends State<Editor> {
 
   void toast(String m) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+
+  // ---------- shareable editable file (.szydelko) ----------
+  Future<String> buildShareFile() async {
+    String? bg, bgExt;
+    if (bgPath != null) {
+      final f = File(bgPath!);
+      if (f.existsSync() && f.lengthSync() < 4 * 1024 * 1024) {
+        bg = base64Encode(await f.readAsBytes());
+        bgExt = bgPath!.contains('.')
+            ? bgPath!.substring(bgPath!.lastIndexOf('.'))
+            : '.jpg';
+      }
+    }
+    return jsonEncode({
+      'format': 'szydelko',
+      'version': 1,
+      'name': name,
+      'grid': grid,
+      'snap': snap,
+      'circle': circle,
+      'gridSize': gridSize,
+      'bgOpacity': bgOpacity,
+      'items': items.map((e) => e.toJson()).toList(),
+      'bgImage': ?bg,
+      'bgExt': ?bgExt,
+    });
+  }
+
+  Future<void> shareFile() async {
+    setState(() => sel = null);
+    final data = await buildShareFile();
+    final dir = await getTemporaryDirectory();
+    final safe = name.replaceAll(RegExp(r'[^\w\-]'), '_');
+    final f = File('${dir.path}/$safe.szydelko');
+    await f.writeAsString(data);
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [XFile(f.path, mimeType: 'application/octet-stream')],
+        text: 'Wzór „$name” – otwórz w aplikacji Szydełkowe Wzory',
+      ),
+    );
+  }
+
+  /// Validates and opens a shared pattern; returns error text or null.
+  Future<String?> importText(String? fileName, String text) async {
+    dynamic j;
+    try {
+      j = jsonDecode(text);
+    } catch (_) {
+      return 'To nie jest plik wzoru (.szydelko) – nie można go odczytać.';
+    }
+    if (j is! Map || j['items'] is! List) {
+      return 'Nieprawidłowy plik wzoru: brak listy symboli.';
+    }
+    if (j['format'] != null && j['format'] != 'szydelko') {
+      return 'Nieznany format pliku.';
+    }
+    final list = <Item>[];
+    var skipped = 0;
+    try {
+      for (final e in (j['items'] as List)) {
+        final it = Item.fromJson(Map<String, dynamic>.from(e as Map));
+        if (byId.containsKey(it.stitch)) {
+          list.add(it);
+        } else {
+          skipped++;
+        }
+      }
+    } catch (_) {
+      return 'Plik wzoru jest uszkodzony (błędne dane symboli).';
+    }
+    String? newBg;
+    if (j['bgImage'] is String) {
+      try {
+        final dir = await getApplicationDocumentsDirectory();
+        final ext = (j['bgExt'] is String) ? j['bgExt'] as String : '.jpg';
+        final f = File(
+          '${dir.path}/tlo_${DateTime.now().millisecondsSinceEpoch}$ext',
+        );
+        await f.writeAsBytes(base64Decode(j['bgImage'] as String));
+        newBg = f.path;
+      } catch (_) {}
+    }
+    var n = (j['name'] is String && (j['name'] as String).trim().isNotEmpty)
+        ? (j['name'] as String).trim()
+        : (fileName ?? 'Wzór').replaceAll(RegExp(r'\.(szydelko|json)$'), '');
+    push();
+    setState(() {
+      name = n;
+      items = list;
+      sel = null;
+      bgPath = newBg;
+      if (j['grid'] is bool) grid = j['grid'];
+      if (j['snap'] is bool) snap = j['snap'];
+      if (j['circle'] is bool) circle = j['circle'];
+      if (j['gridSize'] is num) gridSize = (j['gridSize'] as num).toDouble();
+      if (j['bgOpacity'] is num) {
+        bgOpacity = (j['bgOpacity'] as num).toDouble().clamp(0.05, 1.0);
+      }
+    });
+    // save into local list (don't overwrite an existing one)
+    final d = await patternsDir();
+    final safe = n.replaceAll(RegExp(r'[^\w\-ąćęłńóśźżĄĆĘŁŃÓŚŹŻ ]'), '_');
+    var f = File('${d.path}/$safe.json');
+    var k = 2;
+    while (f.existsSync()) {
+      f = File('${d.path}/$safe ($k).json');
+      k++;
+    }
+    await f.writeAsString(snapshot());
+    toast(
+      skipped > 0
+          ? 'Zaimportowano „$n” (pominięto $skipped nieznanych symboli)'
+          : 'Zaimportowano i zapisano „$n”',
+    );
+    return null;
+  }
+
+  Future<void> handleIncoming(dynamic m) async {
+    if (m is! Map) return;
+    if (m['error'] != null) {
+      toast('Nie można otworzyć pliku: ${m['error']}');
+      return;
+    }
+    final err = await importText(
+      m['name'] as String?,
+      (m['text'] ?? '') as String,
+    );
+    if (err != null && mounted) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Błąd pliku'),
+          content: Text(err),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  Future<void> pickImportFile() async {
+    try {
+      final m = await fileChannel.invokeMethod('pickFile');
+      if (m != null) await handleIncoming(m);
+    } catch (e) {
+      toast('Nie udało się otworzyć pliku');
+    }
+  }
 
   Future<void> save() async {
     final c = TextEditingController(text: name);
@@ -542,6 +705,10 @@ class _EditorState extends State<Editor> {
                   });
                 case 'png':
                   exportPng();
+                case 'share':
+                  shareFile();
+                case 'import':
+                  pickImportFile();
                 case 'bg':
                   pickBg();
                 case 'bgoff':
@@ -559,8 +726,13 @@ class _EditorState extends State<Editor> {
             itemBuilder: (_) => [
               const PopupMenuItem(value: 'new', child: Text('Nowy wzór')),
               const PopupMenuItem(
+                value: 'share',
+                child: Text('Udostępnij wzór (plik do edycji)'),
+              ),
+              const PopupMenuItem(value: 'import', child: Text('Otwórz plik')),
+              const PopupMenuItem(
                 value: 'png',
-                child: Text('Eksportuj PNG / udostępnij'),
+                child: Text('Eksportuj PNG (do druku)'),
               ),
               const PopupMenuItem(
                 value: 'bg',
