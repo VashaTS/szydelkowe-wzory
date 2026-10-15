@@ -127,6 +127,14 @@ class _EditorState extends State<Editor> {
   final List<String> undo = [];
   bool grid = true, snap = true, circle = false, moveMode = false;
   double gridSize = 30;
+
+  /// Circular mode: distance between rounds. 0 = automatic
+  /// (height × scale of the symbol being placed/moved, min. [kMinRound]).
+  double roundStep = 0;
+  static const double kMinRound = 6;
+
+  /// Scale used for newly placed symbols (follows last resize).
+  double curScale = 1;
   int curColor = 0xFF000000;
   String? bgPath;
   double bgOpacity = 0.35;
@@ -194,13 +202,22 @@ class _EditorState extends State<Editor> {
     setState(() => restore(undo.removeLast()));
   }
 
-  Offset snapPt(Offset p) {
+  double effRoundStep([Item? it]) {
+    if (roundStep > 0) return roundStep;
+    final st = it != null ? byId[it.stitch] : selectedStitch;
+    final k = it?.scale ?? curScale;
+    final h = (st?.h ?? 30) * k;
+    return math.max(kMinRound, h);
+  }
+
+  Offset snapPt(Offset p, [Item? it]) {
     if (circle) {
       const c = Offset(kCanvas / 2, kCanvas / 2);
       final d = p - c;
       final r = d.distance;
       if (snap && r > 1) {
-        final rr = (r / gridSize).round() * gridSize;
+        final g = effRoundStep(it);
+        final rr = math.max(1, (r / g).round()) * g;
         return c + d / r * rr;
       }
       return p;
@@ -234,8 +251,16 @@ class _EditorState extends State<Editor> {
     push();
     final q = snapPt(p);
     setState(
-      () =>
-          items.add(Item(st.id, q.dx, q.dy, rot: autoRot(q), color: curColor)),
+      () => items.add(
+        Item(
+          st.id,
+          q.dx,
+          q.dy,
+          rot: autoRot(q),
+          scale: curScale,
+          color: curColor,
+        ),
+      ),
     );
   }
 
@@ -248,7 +273,10 @@ class _EditorState extends State<Editor> {
   void scale(double f) {
     if (sel == null) return;
     push();
-    setState(() => items[sel!].scale = (items[sel!].scale * f).clamp(0.3, 4));
+    setState(() {
+      items[sel!].scale = (items[sel!].scale * f).clamp(0.3, 4).toDouble();
+      curScale = items[sel!].scale;
+    });
   }
 
   void delete() {
@@ -260,34 +288,310 @@ class _EditorState extends State<Editor> {
     });
   }
 
-  void duplicate() {
+  int? _parseInt(String t, int min, int max) {
+    final v = int.tryParse(t.trim());
+    return (v == null || v < min || v > max) ? null : v;
+  }
+
+  static const kMaxBatch = 200;
+
+  Future<void> duplicate() async {
     if (sel == null) return;
-    push();
-    final o = items[sel!];
-    double nx = o.x + gridSize, ny = o.y, nrot = o.rot;
     if (circle) {
-      const c = Offset(kCanvas / 2, kCanvas / 2);
-      final d = Offset(o.x, o.y) - c;
-      final r = d.distance;
-      if (r > 1) {
-        final s = byId[o.stitch];
-        final w = (s?.w ?? 30) * o.scale;
-        // one stitch width along the arc (+ small gap), clamped 5..45 deg
-        var stepDeg = ((w + 4) / r) * 180 / math.pi;
-        stepDeg = stepDeg.clamp(5.0, 45.0);
-        if (snap) stepDeg = (stepDeg / 5).ceil() * 5.0;
-        final a = stepDeg * math.pi / 180;
-        nx = c.dx + d.dx * math.cos(a) - d.dy * math.sin(a);
-        ny = c.dy + d.dx * math.sin(a) + d.dy * math.cos(a);
-        nrot = (o.rot + stepDeg) % 360;
-      }
+      await duplicateCircle();
+    } else {
+      await duplicateGrid();
     }
+  }
+
+  /// Circular: N elements (original = 1st) spread over a segment around
+  /// the circle centre. Full circle: step = 360/N (no overlap at the end).
+  /// Partial arc: step = angle/(N-1) – first and last on the arc ends.
+  /// Direction: clockwise (on screen), starting at the original.
+  Future<void> duplicateCircle() async {
+    final o = items[sel!];
+    const c = Offset(kCanvas / 2, kCanvas / 2);
+    final d = Offset(o.x, o.y) - c;
+    if (d.distance < 1) {
+      toast('Symbol leży w środku koła – przesuń go na okrążek');
+      return;
+    }
+    final nCtl = TextEditingController(text: '8');
+    final angCtl = TextEditingController(text: '120');
+    var seg = 360;
+    String? err;
+    final res = await showDialog<(int, double)>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, ss) => AlertDialog(
+          title: const Text('Powiel na okręgu'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: nCtl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Liczba elementów w segmencie',
+                    helperText: 'Razem z oryginałem (2–200)',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text('Segment'),
+                RadioGroup<int>(
+                  groupValue: seg,
+                  onChanged: (x) => ss(() => seg = x!),
+                  child: Column(
+                    children: [
+                      for (final (v, l) in [
+                        (360, 'Pełne koło'),
+                        (180, 'Pół koła'),
+                        (90, 'Ćwiartka'),
+                        (0, 'Własny kąt'),
+                      ])
+                        RadioListTile<int>(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          value: v,
+                          title: Text(l),
+                        ),
+                    ],
+                  ),
+                ),
+                if (seg == 0)
+                  TextField(
+                    controller: angCtl,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Kąt (stopnie, 1–360)',
+                    ),
+                  ),
+                if (err != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      err!,
+                      style: const TextStyle(color: Colors.red),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Anuluj'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final n = _parseInt(nCtl.text, 2, kMaxBatch);
+                if (n == null) {
+                  ss(() => err = 'Podaj liczbę elementów od 2 do $kMaxBatch');
+                  return;
+                }
+                double ang = seg.toDouble();
+                if (seg == 0) {
+                  final a = double.tryParse(
+                    angCtl.text.trim().replaceAll(',', '.'),
+                  );
+                  if (a == null || a < 1 || a > 360) {
+                    ss(() => err = 'Podaj kąt od 1 do 360 stopni');
+                    return;
+                  }
+                  ang = a;
+                }
+                Navigator.pop(ctx, (n, ang));
+              },
+              child: const Text('Powiel'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (res == null) return;
+    final (n, ang) = res;
+    final step = ang >= 360 ? 360 / n : ang / (n - 1);
+    push();
     setState(() {
-      items.add(
-        Item(o.stitch, nx, ny, rot: nrot, scale: o.scale, color: o.color),
-      );
-      sel = items.length - 1;
+      for (var k = 1; k < n; k++) {
+        final a = k * step * math.pi / 180;
+        items.add(
+          Item(
+            o.stitch,
+            c.dx + d.dx * math.cos(a) - d.dy * math.sin(a),
+            c.dy + d.dx * math.sin(a) + d.dy * math.cos(a),
+            rot: (o.rot + k * step) % 360,
+            scale: o.scale,
+            color: o.color,
+          ),
+        );
+      }
     });
+    toast('Dodano ${n - 1} kopii (co ${step.toStringAsFixed(1)}°)');
+  }
+
+  /// Normal: X stitches × Y rows, original in the bottom-left corner.
+  /// Stitches go to the right, rows go upwards (like a crochet chart).
+  /// Spacing = symbol width/height × scale (rounded up to grid cells when
+  /// snapping is on).
+  Future<void> duplicateGrid() async {
+    final o = items[sel!];
+    final xCtl = TextEditingController(text: '5');
+    final yCtl = TextEditingController(text: '1');
+    String? err;
+    final res = await showDialog<(int, int)>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, ss) => AlertDialog(
+          title: const Text('Powiel w rzędach'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: xCtl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Liczba oczek (X)',
+                  helperText: 'W prawo, razem z oryginałem',
+                ),
+              ),
+              TextField(
+                controller: yCtl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Liczba rzędów (Y)',
+                  helperText: 'W górę, razem z rzędem oryginału',
+                ),
+              ),
+              if (err != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(err!, style: const TextStyle(color: Colors.red)),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Anuluj'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final x = _parseInt(xCtl.text, 1, kMaxBatch);
+                final y = _parseInt(yCtl.text, 1, kMaxBatch);
+                if (x == null || y == null) {
+                  ss(() => err = 'Podaj liczby od 1 do $kMaxBatch');
+                  return;
+                }
+                if (x * y < 2) {
+                  ss(() => err = 'Razem musi być co najmniej 2 elementy');
+                  return;
+                }
+                if (x * y > kMaxBatch) {
+                  ss(
+                    () =>
+                        err = 'Za dużo: X × Y nie może przekroczyć $kMaxBatch',
+                  );
+                  return;
+                }
+                Navigator.pop(ctx, (x, y));
+              },
+              child: const Text('Powiel'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (res == null) return;
+    final (nx, ny) = res;
+    final st = byId[o.stitch];
+    double dx = (st?.w ?? 30) * o.scale, dy = (st?.h ?? 30) * o.scale;
+    if (snap) {
+      dx = math.max(1, (dx / gridSize).ceil()) * gridSize;
+      dy = math.max(1, (dy / gridSize).ceil()) * gridSize;
+    } else {
+      dx += 2;
+      dy += 2;
+    }
+    push();
+    setState(() {
+      for (var j = 0; j < ny; j++) {
+        for (var i = 0; i < nx; i++) {
+          if (i == 0 && j == 0) continue;
+          items.add(
+            Item(
+              o.stitch,
+              o.x + i * dx,
+              o.y - j * dy,
+              rot: o.rot,
+              scale: o.scale,
+              color: o.color,
+            ),
+          );
+        }
+      }
+    });
+    toast('Dodano ${nx * ny - 1} kopii');
+  }
+
+  Future<void> roundSettings() async {
+    var auto = roundStep <= 0;
+    var v = roundStep > 0
+        ? roundStep
+        : effRoundStep(sel != null ? items[sel!] : null);
+    v = v.clamp(kMinRound, 80).toDouble();
+    final res = await showDialog<double>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, ss) => AlertDialog(
+          title: const Text('Odstęp okrążków'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Automatycznie'),
+                subtitle: const Text('Wysokość symbolu × jego skala'),
+                value: auto,
+                onChanged: (x) => ss(() => auto = x),
+              ),
+              Opacity(
+                opacity: auto ? 0.4 : 1,
+                child: Column(
+                  children: [
+                    Text('${v.round()} px'),
+                    Slider(
+                      value: v,
+                      min: kMinRound,
+                      max: 80,
+                      divisions: 74,
+                      label: '${v.round()}',
+                      onChanged: auto ? null : (x) => ss(() => v = x),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Anuluj'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.pop(ctx, auto ? 0.0 : v.roundToDouble()),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (res != null) setState(() => roundStep = res);
   }
 
   Future<void> pickColor() async {
@@ -374,6 +678,7 @@ class _EditorState extends State<Editor> {
       'snap': snap,
       'circle': circle,
       'gridSize': gridSize,
+      'roundStep': roundStep,
       'bgOpacity': bgOpacity,
       'items': items.map((e) => e.toJson()).toList(),
       'bgImage': ?bg,
@@ -449,6 +754,9 @@ class _EditorState extends State<Editor> {
       if (j['snap'] is bool) snap = j['snap'];
       if (j['circle'] is bool) circle = j['circle'];
       if (j['gridSize'] is num) gridSize = (j['gridSize'] as num).toDouble();
+      if (j['roundStep'] is num) {
+        roundStep = (j['roundStep'] as num).toDouble().clamp(0, 80).toDouble();
+      }
       if (j['bgOpacity'] is num) {
         bgOpacity = (j['bgOpacity'] as num).toDouble().clamp(0.05, 1.0);
       }
@@ -659,7 +967,7 @@ class _EditorState extends State<Editor> {
             });
           },
           onPanEnd: (_) {
-            final q = snapPt(Offset(it.x, it.y));
+            final q = snapPt(Offset(it.x, it.y), it);
             setState(() {
               it.x = q.dx;
               it.y = q.dy;
@@ -733,6 +1041,8 @@ class _EditorState extends State<Editor> {
                   setState(() => snap = !snap);
                 case 'circle':
                   setState(() => circle = !circle);
+                case 'rounds':
+                  roundSettings();
                 case 'about':
                   about();
               }
@@ -769,6 +1079,11 @@ class _EditorState extends State<Editor> {
                 checked: circle,
                 child: const Text('Tryb okrągły'),
               ),
+              if (circle)
+                const PopupMenuItem(
+                  value: 'rounds',
+                  child: Text('Odstęp okrążków…'),
+                ),
               const PopupMenuItem(value: 'about', child: Text('O aplikacji')),
             ],
           ),
@@ -818,7 +1133,11 @@ class _EditorState extends State<Editor> {
                                 Positioned.fill(
                                   child: CustomPaint(
                                     painter: GuidePainter(
-                                      gridSize,
+                                      circle
+                                          ? effRoundStep(
+                                              sel != null ? items[sel!] : null,
+                                            )
+                                          : gridSize,
                                       grid && !circle,
                                       circle,
                                     ),
