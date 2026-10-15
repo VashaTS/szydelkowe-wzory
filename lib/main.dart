@@ -98,18 +98,22 @@ void main() {
 }
 
 class App extends StatelessWidget {
-  const App({super.key});
+  const App({super.key, this.home});
+  final Widget? home;
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'Szydełkowe Wzory',
     debugShowCheckedModeBanner: false,
     theme: ThemeData(colorSchemeSeed: Colors.pink, useMaterial3: true),
-    home: const Editor(),
+    home: home ?? const Editor(),
   );
 }
 
 class Editor extends StatefulWidget {
-  const Editor({super.key});
+  const Editor({super.key, this.initialPattern});
+
+  /// Optional pattern (internal JSON) shown at start – used for store screenshots/tests.
+  final String? initialPattern;
   @override
   State<Editor> createState() => _EditorState();
 }
@@ -146,6 +150,16 @@ class _EditorState extends State<Editor> {
           orElse: () => l.first,
         );
       });
+      if (widget.initialPattern != null) {
+        final j = jsonDecode(widget.initialPattern!);
+        setState(() {
+          restore(widget.initialPattern!);
+          circle = j['circle'] == true;
+          if (j['selected'] is int) sel = j['selected'];
+          if (j['stitch'] is String) selectedStitch = byId[j['stitch']];
+        });
+        return;
+      }
       // file opened from WhatsApp / Files at app start
       try {
         final m = await fileChannel.invokeMethod('getInitialFile');
@@ -1031,6 +1045,13 @@ class AboutPage extends StatelessWidget {
           Text(
             'Dodatkowe symbole (oczko ścisłe wydłużone, słupek wydłużony, półsłupki reliefowe, '
             'słupki podwójne reliefowe, 2 półsłupki razem, magiczne kółko) narysowano w tym samym stylu na potrzeby aplikacji.',
+          ),
+          SizedBox(height: 16),
+          Text('Prywatność', style: TextStyle(fontWeight: FontWeight.bold)),
+          Text(
+            'Aplikacja nie zbiera, nie wysyła ani nie udostępnia żadnych danych. '
+            'Wzory i obrazy zostają na Twoim telefonie; pliki trafiają do innych osób '
+            'tylko wtedy, gdy sama je udostępnisz.',
           ),
         ],
       ),
